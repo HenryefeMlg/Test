@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Power Supply - Mobile Friendly</title>
+<title>Power Supply - Auto Reset</title>
 
 <style>
     body {
@@ -17,7 +17,7 @@
 
     canvas {
         display: block;
-        touch-action: none; /* Mobil kaydırmayı engeller */
+        touch-action: none;
     }
 
     #timer {
@@ -46,7 +46,6 @@
 
     #overlay h1 { font-size: 40px; color: red; margin: 0; }
     #overlay p { opacity: 0.7; font-size: 18px; }
-    .hint { color: #aaa; font-size: 14px; margin-top: 20px; }
 </style>
 </head>
 
@@ -59,7 +58,6 @@
     <h1>GÜÇ KESİLDİ</h1>
     <h2>MANUEL RESET GEREKLİ</h2>
     <p>Ekrana iki kez hızlıca dokunun</p>
-    <div class="hint">(Sistemi yeniden başlatmak için)</div>
 </div>
 
 <audio id="connectSound">
@@ -82,7 +80,7 @@ let left = [], right = [], connections = [null, null, null, null];
 let selected = null;
 let isDragging = false;
 let currentPos = { x: 0, y: 0 };
-const colors = ["#ff4d4d", "#4d94ff", "#4dff4d", "#ffff4d"]; // Daha parlak renkler
+const colors = ["#ff4d4d", "#4d94ff", "#4dff4d", "#ffff4d"];
 
 function resize() {
     canvas.width = window.innerWidth;
@@ -101,7 +99,6 @@ function generate() {
     right.sort(() => Math.random() - 0.5);
 }
 
-// Pozisyon Alma
 function getPointerPos(e) {
     const rect = canvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -109,11 +106,10 @@ function getPointerPos(e) {
     return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
-// Olaylar
 function startAction(e) {
     const pos = getPointerPos(e);
     left.forEach((p, i) => {
-        if (Math.hypot(pos.x - p.x, pos.y - p.y) < 35) { // Dokunma alanı geniş
+        if (Math.hypot(pos.x - p.x, pos.y - p.y) < 35) {
             selected = i;
             isDragging = true;
             currentPos = pos;
@@ -122,14 +118,11 @@ function startAction(e) {
 }
 
 function moveAction(e) {
-    if (isDragging) {
-        currentPos = getPointerPos(e);
-    }
+    if (isDragging) currentPos = getPointerPos(e);
 }
 
 function endAction(e) {
     if (!isDragging) return;
-    
     right.forEach((p, i) => {
         if (Math.hypot(currentPos.x - p.x, currentPos.y - p.y) < 45) {
             connections[selected] = i;
@@ -138,19 +131,32 @@ function endAction(e) {
             checkWin();
         }
     });
-
     isDragging = false;
     selected = null;
 }
 
+// KRİTİK GÜNCELLEME: Yanlışsa en baştan başlama mantığı
 function checkWin() {
     if (connections.every(c => c !== null)) {
         const win = connections.every((rIdx, lIdx) => left[lIdx].color === right[rIdx].color);
+        
         if (win) {
             setTimeout(() => {
                 alert("⚡ SİSTEM ÇALIŞIYOR!");
                 resetGame();
             }, 300);
+        } else {
+            // Yanlış eşleştirme durumunda
+            setTimeout(() => {
+                // Ekranda kısa süreli kırmızı bir efekt (isteğe bağlı)
+                ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                setTimeout(() => {
+                    connections = [null, null, null, null]; // Bağlantıları sıfırla
+                    generate(); // Sağ tarafı tekrar karıştır
+                }, 200);
+            }, 500);
         }
     }
 }
@@ -159,13 +165,6 @@ function draw() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Glitch efekti
-    if (Math.random() < 0.03) {
-        ctx.fillStyle = "rgba(0, 255, 0, 0.05)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // Bağlantıları çiz
     connections.forEach((rIdx, lIdx) => {
         if (rIdx !== null) {
             ctx.strokeStyle = left[lIdx].color;
@@ -177,7 +176,6 @@ function draw() {
         }
     });
 
-    // Sürüklenen çizgi
     if (isDragging && selected !== null) {
         ctx.strokeStyle = left[selected].color;
         ctx.lineWidth = 4;
@@ -189,7 +187,6 @@ function draw() {
         ctx.setLineDash([]);
     }
 
-    // Noktalar
     [...left, ...right].forEach(p => {
         ctx.shadowBlur = 15;
         ctx.shadowColor = p.color;
@@ -203,7 +200,6 @@ function draw() {
     requestAnimationFrame(draw);
 }
 
-// Timer Yönetimi
 let time = 60;
 let timerInterval;
 function startTimer() {
@@ -225,17 +221,14 @@ function resetGame() {
     startTimer();
 }
 
-// Event Listeners
 window.addEventListener("resize", resize);
 canvas.addEventListener("mousedown", startAction);
 window.addEventListener("mousemove", moveAction);
 window.addEventListener("mouseup", endAction);
-
 canvas.addEventListener("touchstart", (e) => { e.preventDefault(); startAction(e); }, { passive: false });
 canvas.addEventListener("touchmove", (e) => { e.preventDefault(); moveAction(e); }, { passive: false });
 canvas.addEventListener("touchend", endAction);
 
-// Power System (2 dakika)
 let powerTimeout = setTimeout(() => overlay.style.display="flex", 120000);
 overlay.addEventListener("dblclick", () => {
     overlay.style.display = "none";
@@ -243,11 +236,9 @@ overlay.addEventListener("dblclick", () => {
     powerTimeout = setTimeout(() => overlay.style.display="flex", 120000);
 });
 
-// Başlat
 resize();
 startTimer();
 draw();
-
 </script>
 </body>
 </html>
