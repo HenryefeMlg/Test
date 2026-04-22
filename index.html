@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Power Supply - Always On</title>
+<title>Power Supply - Auto Wake</title>
 
 <style>
     body {
@@ -12,12 +12,22 @@
         overflow: hidden;
         font-family: 'Courier New', Courier, monospace;
         user-select: none;
-        -webkit-user-select: none;
     }
 
-    canvas {
-        display: block;
-        touch-action: none;
+    canvas { display: block; touch-action: none; }
+
+    /* Başlangıç ve Diğer Ekranlar */
+    #startScreen, #overlay, #loadingOverlay {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        z-index: 100;
     }
 
     #timer {
@@ -28,34 +38,22 @@
         color: #0f0;
         font-size: 32px;
         font-weight: bold;
-        text-shadow: 0 0 10px #0f0;
         z-index: 5;
     }
 
-    #overlay, #loadingOverlay {
-        position: fixed;
-        inset: 0;
-        background: #000;
-        color: white;
-        display: none;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-        z-index: 20;
+    .btn {
+        background: #111;
+        color: #0f0;
+        border: 2px solid #0f0;
+        padding: 20px 40px;
+        font-size: 18px;
+        font-family: 'Courier New', monospace;
+        cursor: pointer;
+        box-shadow: 0 0 10px #0f0;
+        transition: 0.2s;
     }
 
-    .reset-btn {
-        background: #300;
-        color: #ff4d4d;
-        border: 2px solid #ff4d4d;
-        padding: 20px 40px;
-        font-size: 20px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-top: 30px;
-        box-shadow: 0 0 15px #f00;
-    }
+    .btn:active { background: #0f0; color: #000; }
 
     .loader {
         width: 200px;
@@ -66,35 +64,33 @@
         overflow: hidden;
     }
     .loader::after {
-        content: '';
-        width: 50px;
-        height: 4px;
-        background: #0f0;
-        position: absolute;
-        animation: loading 2s infinite linear;
+        content: ''; width: 50px; height: 4px; background: #0f0;
+        position: absolute; animation: loading 2s infinite linear;
     }
-    @keyframes loading {
-        0% { left: -50px; }
-        100% { left: 200px; }
-    }
+    @keyframes loading { 0% { left: -50px; } 100% { left: 200px; } }
 </style>
 </head>
 
 <body>
 
+<div id="startScreen">
+    <h1 style="color:#0f0">GÜÇ SİSTEMİ</h1>
+    <p>Ekranın kapanmasını engellemek ve oyunu başlatmak için basın</p>
+    <button class="btn" onclick="initGame()">SİSTEMİ BAŞLAT</button>
+</div>
+
 <div id="timer">120</div>
 <canvas id="c"></canvas>
 
-<div id="loadingOverlay">
+<div id="loadingOverlay" style="display:none">
     <h1>SİSTEM YÜKLENİYOR...</h1>
-    <p>Lütfen bekleyin</p>
     <div id="countdown" style="font-size: 40px; color: #0f0;">60</div>
     <div class="loader"></div>
 </div>
 
-<div id="overlay">
-    <h1 style="color:red; font-size: 50px;">GÜÇ KESİLDİ</h1>
-    <button class="reset-btn" onclick="manualReset()">SİSTEMİ YENİDEN BAŞLAT</button>
+<div id="overlay" style="display:none">
+    <h1 style="color:red; font-size: 40px;">GÜÇ KESİLDİ</h1>
+    <button class="btn" style="color:red; border-color:red; box-shadow: 0 0 10px red;" onclick="manualReset()">YENİDEN BAŞLAT</button>
 </div>
 
 <audio id="connectSound">
@@ -104,6 +100,7 @@
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
+const startScreen = document.getElementById("startScreen");
 const overlay = document.getElementById("overlay");
 const loadingOverlay = document.getElementById("loadingOverlay");
 const timerEl = document.getElementById("timer");
@@ -111,23 +108,28 @@ const countdownEl = document.getElementById("countdown");
 const connectSound = document.getElementById("connectSound");
 
 let left = [], right = [], connections = [null, null, null, null];
-let selected = null;
-let isDragging = false;
-let currentPos = { x: 0, y: 0 };
+let selected = null, isDragging = false, currentPos = { x: 0, y: 0 };
+let wakeLock = null;
 const colors = ["#ff4d4d", "#4d94ff", "#4dff4d", "#ffff4d"];
 
-// --- EKRAN KARARMASINI ENGELLEME (WAKE LOCK) ---
-let wakeLock = null;
-async function requestWakeLock() {
-    try {
-        if ('wakeLock' in navigator) {
+// EKİBİ BAŞLATAN VE EKRANI AÇIK TUTAN FONKSİYON
+async function initGame() {
+    startScreen.style.display = "none";
+    
+    // Wake Lock iste (Ekranı açık tut)
+    if ('wakeLock' in navigator) {
+        try {
             wakeLock = await navigator.wakeLock.request('screen');
+            console.log("Wake Lock Aktif!");
+        } catch (err) {
+            console.error("Hata:", err);
         }
-    } catch (err) {
-        console.log("Wake Lock hatası:", err);
     }
+
+    resize();
+    startTimer();
+    draw();
 }
-// ----------------------------------------------
 
 function resize() {
     canvas.width = window.innerWidth;
@@ -136,138 +138,93 @@ function resize() {
 }
 
 function generate() {
-    left = []; right = [];
-    connections = [null, null, null, null];
+    left = []; right = []; connections = [null, null, null, null];
     const padding = canvas.height / 6;
-    let leftColors = [...colors].sort(() => Math.random() - 0.5);
-    let rightColors = [...colors].sort(() => Math.random() - 0.5);
-
+    let lC = [...colors].sort(() => Math.random() - 0.5);
+    let rC = [...colors].sort(() => Math.random() - 0.5);
     for(let i=0; i<4; i++) {
-        left.push({ x: canvas.width * 0.15, y: padding + i * padding, color: leftColors[i] });
-        right.push({ x: canvas.width * 0.85, y: padding + i * padding, color: rightColors[i] });
+        left.push({ x: canvas.width * 0.15, y: padding + i * padding, color: lC[i] });
+        right.push({ x: canvas.width * 0.85, y: padding + i * padding, color: rC[i] });
     }
 }
 
 function getPointerPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+    const cX = e.touches ? e.touches[0].clientX : e.clientX;
+    const cY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: cX - rect.left, y: cY - rect.top };
 }
 
 function startAction(e) {
-    requestWakeLock(); // Oyuna dokunulduğunda ekran kilidini başlat
     const pos = getPointerPos(e);
     left.forEach((p, i) => {
         if (Math.hypot(pos.x - p.x, pos.y - p.y) < 35) {
-            selected = i;
-            isDragging = true;
-            currentPos = pos;
+            selected = i; isDragging = true; currentPos = pos;
         }
     });
 }
 
-function moveAction(e) {
-    if (isDragging) currentPos = getPointerPos(e);
-}
+function moveAction(e) { if (isDragging) currentPos = getPointerPos(e); }
 
 function endAction(e) {
     if (!isDragging) return;
     right.forEach((p, i) => {
         if (Math.hypot(currentPos.x - p.x, currentPos.y - p.y) < 45) {
             if (left[selected].color !== p.color) {
-                failEffect();
                 generate(); 
             } else {
                 connections[selected] = i;
                 connectSound.currentTime = 0;
                 connectSound.play().catch(() => {});
-                checkWin();
+                if (connections.every(c => c !== null)) startLoadingSequence();
             }
         }
     });
-    isDragging = false;
-    selected = null;
-}
-
-function failEffect() {
-    ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-}
-
-function checkWin() {
-    if (connections.every(c => c !== null)) {
-        startLoadingSequence();
-    }
+    isDragging = false; selected = null;
 }
 
 function startLoadingSequence() {
     clearInterval(timerInterval);
     loadingOverlay.style.display = "flex";
-    let waitTime = 60;
-    countdownEl.textContent = waitTime;
-    const waitInterval = setInterval(() => {
-        waitTime--;
-        countdownEl.textContent = waitTime;
-        if (waitTime <= 0) {
-            clearInterval(waitInterval);
-            loadingOverlay.style.display = "none";
-            resetGame();
-        }
+    let w = 60;
+    countdownEl.textContent = w;
+    const i = setInterval(() => {
+        w--; countdownEl.textContent = w;
+        if (w <= 0) { clearInterval(i); loadingOverlay.style.display = "none"; resetGame(); }
     }, 1000);
 }
 
 function draw() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    connections.forEach((rIdx, lIdx) => {
-        if (rIdx !== null) {
-            ctx.strokeStyle = left[lIdx].color;
-            ctx.lineWidth = 6;
-            ctx.beginPath();
-            ctx.moveTo(left[lIdx].x, left[lIdx].y);
-            ctx.lineTo(right[rIdx].x, right[rIdx].y);
-            ctx.stroke();
+    connections.forEach((r, l) => {
+        if (r !== null) {
+            ctx.strokeStyle = left[l].color; ctx.lineWidth = 6;
+            ctx.beginPath(); ctx.moveTo(left[l].x, left[l].y); ctx.lineTo(right[r].x, right[r].y); ctx.stroke();
         }
     });
     if (isDragging && selected !== null) {
-        ctx.strokeStyle = left[selected].color;
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(left[selected].x, left[selected].y);
-        ctx.lineTo(currentPos.x, currentPos.y);
-        ctx.stroke();
+        ctx.strokeStyle = left[selected].color; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(left[selected].x, left[selected].y); ctx.lineTo(currentPos.x, currentPos.y); ctx.stroke();
     }
     [...left, ...right].forEach(p => {
-        ctx.shadowBlur = 10; ctx.shadowColor = p.color;
-        ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2); ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
     });
     requestAnimationFrame(draw);
 }
 
-let time = 120;
-let timerInterval;
+let time = 120, timerInterval;
 function startTimer() {
-    time = 120;
-    timerEl.textContent = time;
+    time = 120; timerEl.textContent = time;
     timerInterval = setInterval(() => {
-        time--;
-        timerEl.textContent = time;
+        time--; timerEl.textContent = time;
         if(time <= 0) { clearInterval(timerInterval); overlay.style.display="flex"; }
     }, 1000);
 }
 
-function resetGame() {
-    generate();
-    startTimer();
-}
-
-function manualReset() {
-    overlay.style.display = "none";
-    resetGame();
-}
+function resetGame() { generate(); startTimer(); }
+function manualReset() { overlay.style.display = "none"; resetGame(); }
 
 window.addEventListener("resize", resize);
 canvas.addEventListener("mousedown", startAction);
@@ -277,9 +234,12 @@ canvas.addEventListener("touchstart", (e) => { e.preventDefault(); startAction(e
 canvas.addEventListener("touchmove", (e) => { e.preventDefault(); moveAction(e); }, { passive: false });
 canvas.addEventListener("touchend", endAction);
 
-resize();
-startTimer();
-draw();
+// Sekme değiştirilirse ekran kilidini yenile
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && startScreen.style.display === "none") {
+        initGame();
+    }
+});
 </script>
 </body>
 </html>
