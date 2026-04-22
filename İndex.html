@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Power Suply</title>
+
+<style>
+body {
+    margin:0;
+    background:#000;
+    overflow:hidden;
+    font-family:Arial;
+}
+
+canvas {
+    display:block;
+}
+
+#timer {
+    position:fixed;
+    top:10px;
+    left:50%;
+    transform:translateX(-50%);
+    color:white;
+    font-size:28px;
+}
+
+#overlay {
+    position:fixed;
+    inset:0;
+    background:black;
+    color:white;
+    display:none;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+}
+
+#overlay h1 {
+    font-size:50px;
+}
+
+#overlay p {
+    opacity:0.6;
+}
+</style>
+</head>
+
+<body>
+
+<div id="timer">60</div>
+<canvas id="c"></canvas>
+
+<div id="overlay">
+    <h1>POWER SUPLY</h1>
+    <h2>manuel power</h2>
+    <p>ekrana 2 kere tıklayarak manuel çalıştırın</p>
+</div>
+
+<audio id="connectSound">
+<source src="https://www.soundjay.com/buttons/sounds/button-09.mp3">
+</audio>
+
+<audio id="alarm">
+<source src="https://www.soundjay.com/misc/sounds/alarm-clock-01.mp3">
+</audio>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
+const timerEl = document.getElementById("timer");
+
+const connectSound = document.getElementById("connectSound");
+const alarm = document.getElementById("alarm");
+
+function resize(){
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+}
+resize();
+window.onresize = resize;
+
+const colors = ["red","blue","green","yellow"];
+
+let left = [];
+let right = [];
+let connections = [null,null,null,null];
+
+let selected = null;
+
+function generate(){
+    left = [];
+    right = [];
+
+    for(let i=0;i<4;i++){
+        left.push({x:canvas.width*0.2,y:(i+1)*canvas.height/5,color:colors[i]});
+        right.push({x:canvas.width*0.8,y:(i+1)*canvas.height/5,color:colors[i]});
+    }
+
+    // randomize right side order
+    right.sort(()=>Math.random()-0.5);
+}
+
+function drawLineAnimated(x1,y1,x2,y2,progress){
+    const x = x1 + (x2-x1)*progress;
+    const y = y1 + (y2-y1)*progress;
+
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x,y);
+    ctx.stroke();
+}
+
+function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // glitch effect
+    if(Math.random()<0.05){
+        ctx.fillStyle="rgba(255,255,255,0.03)";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+
+    // points
+    left.forEach(p=>{
+        ctx.fillStyle=p.color;
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,10,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    right.forEach(p=>{
+        ctx.fillStyle=p.color;
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,10,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    // connections
+    connections.forEach((rIndex,lIndex)=>{
+        if(rIndex!==null){
+            ctx.strokeStyle=left[lIndex].color;
+            ctx.lineWidth=3;
+            drawLineAnimated(
+                left[lIndex].x,
+                left[lIndex].y,
+                right[rIndex].x,
+                right[rIndex].y,
+                1
+            );
+        }
+    });
+}
+
+canvas.addEventListener("click",e=>{
+    const mx=e.clientX;
+    const my=e.clientY;
+
+    // sol seç
+    left.forEach((p,i)=>{
+        if(Math.hypot(mx-p.x,my-p.y)<15){
+            selected=i;
+        }
+    });
+
+    // sağa bağla
+    right.forEach((p,i)=>{
+        if(Math.hypot(mx-p.x,my-p.y)<15 && selected!==null){
+            connections[i]=selected;
+
+            connectSound.currentTime=0;
+            connectSound.play().catch(()=>{});
+
+            selected=null;
+        }
+    });
+
+    checkWin();
+});
+
+function checkWin(){
+    let correct=true;
+
+    connections.forEach((lIndex,rIndex)=>{
+        if(lIndex===null) correct=false;
+        else{
+            if(left[lIndex].color!==right[rIndex].color){
+                correct=false;
+            }
+        }
+    });
+
+    if(correct){
+        alert("Sistem Aktif ⚡");
+        resetGame();
+    }
+}
+
+function loop(){
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+
+generate();
+
+
+// TIMER
+let time = 60;
+let timerInterval;
+
+function startTimer(){
+    time = 60;
+    timerEl.textContent = time;
+
+    timerInterval = setInterval(()=>{
+        time--;
+        timerEl.textContent = time;
+
+        if(time<=0){
+            clearInterval(timerInterval);
+            alarm.play().catch(()=>{});
+        }
+    },1000);
+}
+
+startTimer();
+
+function resetGame(){
+    connections=[null,null,null,null];
+    generate();
+    clearInterval(timerInterval);
+    startTimer();
+}
+
+
+// POWER SYSTEM
+let powerTimeout = setTimeout(powerOff,120000);
+
+function powerOff(){
+    overlay.style.display="flex";
+}
+
+overlay.addEventListener("dblclick",()=>{
+    overlay.style.display="none";
+    resetPowerTimer();
+});
+
+function resetPowerTimer(){
+    clearTimeout(powerTimeout);
+    powerTimeout = setTimeout(powerOff,120000);
+}
+</script>
+
+</body>
+</html>
