@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Power Supply - Button Reset</title>
+<title>Power Supply - Always On</title>
 
 <style>
     body {
@@ -45,27 +45,17 @@
         z-index: 20;
     }
 
-    /* Kırmızı Güç Kesintisi Ekranı Butonu */
     .reset-btn {
         background: #300;
         color: #ff4d4d;
         border: 2px solid #ff4d4d;
         padding: 20px 40px;
         font-size: 20px;
-        font-family: 'Courier New', monospace;
         font-weight: bold;
         cursor: pointer;
         margin-top: 30px;
         box-shadow: 0 0 15px #f00;
-        transition: 0.3s;
     }
-
-    .reset-btn:active {
-        background: #f00;
-        color: #000;
-    }
-
-    #loadingOverlay h1 { font-size: 24px; letter-spacing: 2px; }
 
     .loader {
         width: 200px;
@@ -126,6 +116,19 @@ let isDragging = false;
 let currentPos = { x: 0, y: 0 };
 const colors = ["#ff4d4d", "#4d94ff", "#4dff4d", "#ffff4d"];
 
+// --- EKRAN KARARMASINI ENGELLEME (WAKE LOCK) ---
+let wakeLock = null;
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+        }
+    } catch (err) {
+        console.log("Wake Lock hatası:", err);
+    }
+}
+// ----------------------------------------------
+
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -133,14 +136,16 @@ function resize() {
 }
 
 function generate() {
-    left = [];
-    right = [];
+    left = []; right = [];
+    connections = [null, null, null, null];
     const padding = canvas.height / 6;
+    let leftColors = [...colors].sort(() => Math.random() - 0.5);
+    let rightColors = [...colors].sort(() => Math.random() - 0.5);
+
     for(let i=0; i<4; i++) {
-        left.push({ x: canvas.width * 0.15, y: padding + i * padding, color: colors[i] });
-        right.push({ x: canvas.width * 0.85, y: padding + i * padding, color: colors[i] });
+        left.push({ x: canvas.width * 0.15, y: padding + i * padding, color: leftColors[i] });
+        right.push({ x: canvas.width * 0.85, y: padding + i * padding, color: rightColors[i] });
     }
-    right.sort(() => Math.random() - 0.5);
 }
 
 function getPointerPos(e) {
@@ -151,6 +156,7 @@ function getPointerPos(e) {
 }
 
 function startAction(e) {
+    requestWakeLock(); // Oyuna dokunulduğunda ekran kilidini başlat
     const pos = getPointerPos(e);
     left.forEach((p, i) => {
         if (Math.hypot(pos.x - p.x, pos.y - p.y) < 35) {
@@ -167,13 +173,11 @@ function moveAction(e) {
 
 function endAction(e) {
     if (!isDragging) return;
-    
     right.forEach((p, i) => {
         if (Math.hypot(currentPos.x - p.x, currentPos.y - p.y) < 45) {
             if (left[selected].color !== p.color) {
                 failEffect();
-                connections = [null, null, null, null];
-                generate();
+                generate(); 
             } else {
                 connections[selected] = i;
                 connectSound.currentTime = 0;
@@ -235,12 +239,9 @@ function draw() {
         ctx.stroke();
     }
     [...left, ...right].forEach(p => {
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2); ctx.fill();
         ctx.shadowBlur = 0;
     });
     requestAnimationFrame(draw);
@@ -254,15 +255,11 @@ function startTimer() {
     timerInterval = setInterval(() => {
         time--;
         timerEl.textContent = time;
-        if(time <= 0) { 
-            clearInterval(timerInterval); 
-            overlay.style.display="flex"; 
-        }
+        if(time <= 0) { clearInterval(timerInterval); overlay.style.display="flex"; }
     }, 1000);
 }
 
 function resetGame() {
-    connections = [null, null, null, null];
     generate();
     startTimer();
 }
