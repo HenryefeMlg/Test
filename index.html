@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Power Supply - Auto Reset</title>
+<title>Power Supply - Hard Mode</title>
 
 <style>
     body {
@@ -29,12 +29,13 @@
         font-size: 32px;
         font-weight: bold;
         text-shadow: 0 0 10px #0f0;
+        z-index: 5;
     }
 
     #overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.9);
+        background: rgba(0, 0, 0, 0.95);
         color: white;
         display: none;
         flex-direction: column;
@@ -45,7 +46,6 @@
     }
 
     #overlay h1 { font-size: 40px; color: red; margin: 0; }
-    #overlay p { opacity: 0.7; font-size: 18px; }
 </style>
 </head>
 
@@ -56,16 +56,11 @@
 
 <div id="overlay">
     <h1>GÜÇ KESİLDİ</h1>
-    <h2>MANUEL RESET GEREKLİ</h2>
-    <p>Ekrana iki kez hızlıca dokunun</p>
+    <p>Sistemi Resetlemek İçin Çift Tıklayın</p>
 </div>
 
 <audio id="connectSound">
     <source src="https://www.soundjay.com/buttons/sounds/button-09.mp3">
-</audio>
-
-<audio id="alarm">
-    <source src="https://www.soundjay.com/misc/sounds/alarm-clock-01.mp3">
 </audio>
 
 <script>
@@ -74,7 +69,6 @@ const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
 const timerEl = document.getElementById("timer");
 const connectSound = document.getElementById("connectSound");
-const alarm = document.getElementById("alarm");
 
 let left = [], right = [], connections = [null, null, null, null];
 let selected = null;
@@ -123,41 +117,41 @@ function moveAction(e) {
 
 function endAction(e) {
     if (!isDragging) return;
+    
+    let foundMatch = false;
     right.forEach((p, i) => {
         if (Math.hypot(currentPos.x - p.x, currentPos.y - p.y) < 45) {
-            connections[selected] = i;
-            connectSound.currentTime = 0;
-            connectSound.play().catch(() => {});
-            checkWin();
+            foundMatch = true;
+            // ANLIK KONTROL: Eğer renkler tutmuyorsa patlat!
+            if (left[selected].color !== p.color) {
+                failEffect();
+                connections = [null, null, null, null];
+                generate();
+            } else {
+                connections[selected] = i;
+                connectSound.currentTime = 0;
+                connectSound.play().catch(() => {});
+                checkWin();
+            }
         }
     });
+
     isDragging = false;
     selected = null;
 }
 
-// KRİTİK GÜNCELLEME: Yanlışsa en baştan başlama mantığı
+// Yanlış yapınca kırmızı ekran flaşı
+function failEffect() {
+    ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
 function checkWin() {
     if (connections.every(c => c !== null)) {
-        const win = connections.every((rIdx, lIdx) => left[lIdx].color === right[rIdx].color);
-        
-        if (win) {
-            setTimeout(() => {
-                alert("⚡ SİSTEM ÇALIŞIYOR!");
-                resetGame();
-            }, 300);
-        } else {
-            // Yanlış eşleştirme durumunda
-            setTimeout(() => {
-                // Ekranda kısa süreli kırmızı bir efekt (isteğe bağlı)
-                ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                setTimeout(() => {
-                    connections = [null, null, null, null]; // Bağlantıları sıfırla
-                    generate(); // Sağ tarafı tekrar karıştır
-                }, 200);
-            }, 500);
-        }
+        setTimeout(() => {
+            alert("⚡ TAMAMLANDI!");
+            resetGame();
+        }, 100);
     }
 }
 
@@ -165,6 +159,7 @@ function draw() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Mevcut bağlantılar
     connections.forEach((rIdx, lIdx) => {
         if (rIdx !== null) {
             ctx.strokeStyle = left[lIdx].color;
@@ -176,23 +171,23 @@ function draw() {
         }
     });
 
+    // Aktif sürükleme
     if (isDragging && selected !== null) {
         ctx.strokeStyle = left[selected].color;
         ctx.lineWidth = 4;
-        ctx.setLineDash([10, 5]);
         ctx.beginPath();
         ctx.moveTo(left[selected].x, left[selected].y);
         ctx.lineTo(currentPos.x, currentPos.y);
         ctx.stroke();
-        ctx.setLineDash([]);
     }
 
+    // Soketler
     [...left, ...right].forEach(p => {
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 10;
         ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
     });
@@ -207,10 +202,7 @@ function startTimer() {
     timerInterval = setInterval(() => {
         time--;
         timerEl.textContent = time;
-        if(time <= 0) {
-            clearInterval(timerInterval);
-            alarm.play().catch(() => {});
-        }
+        if(time <= 0) { clearInterval(timerInterval); overlay.style.display="flex"; }
     }, 1000);
 }
 
@@ -229,11 +221,9 @@ canvas.addEventListener("touchstart", (e) => { e.preventDefault(); startAction(e
 canvas.addEventListener("touchmove", (e) => { e.preventDefault(); moveAction(e); }, { passive: false });
 canvas.addEventListener("touchend", endAction);
 
-let powerTimeout = setTimeout(() => overlay.style.display="flex", 120000);
 overlay.addEventListener("dblclick", () => {
     overlay.style.display = "none";
-    clearTimeout(powerTimeout);
-    powerTimeout = setTimeout(() => overlay.style.display="flex", 120000);
+    resetGame();
 });
 
 resize();
