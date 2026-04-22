@@ -2,48 +2,51 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<title>Power Suply</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Power Supply - Mobile Friendly</title>
 
 <style>
-body {
-    margin:0;
-    background:#000;
-    overflow:hidden;
-    font-family:Arial;
-}
+    body {
+        margin: 0;
+        background: #000;
+        overflow: hidden;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+    }
 
-canvas {
-    display:block;
-}
+    canvas {
+        display: block;
+        touch-action: none; /* Mobil kaydırmayı engeller */
+    }
 
-#timer {
-    position:fixed;
-    top:10px;
-    left:50%;
-    transform:translateX(-50%);
-    color:white;
-    font-size:28px;
-}
+    #timer {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #0f0;
+        font-size: 32px;
+        font-weight: bold;
+        text-shadow: 0 0 10px #0f0;
+    }
 
-#overlay {
-    position:fixed;
-    inset:0;
-    background:black;
-    color:white;
-    display:none;
-    flex-direction:column;
-    justify-content:center;
-    align-items:center;
-    text-align:center;
-}
+    #overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        z-index: 10;
+    }
 
-#overlay h1 {
-    font-size:50px;
-}
-
-#overlay p {
-    opacity:0.6;
-}
+    #overlay h1 { font-size: 40px; color: red; margin: 0; }
+    #overlay p { opacity: 0.7; font-size: 18px; }
+    .hint { color: #aaa; font-size: 14px; margin-top: 20px; }
 </style>
 </head>
 
@@ -53,17 +56,18 @@ canvas {
 <canvas id="c"></canvas>
 
 <div id="overlay">
-    <h1>POWER SUPLY</h1>
-    <h2>manuel power</h2>
-    <p>ekrana 2 kere tıklayarak manuel çalıştırın</p>
+    <h1>GÜÇ KESİLDİ</h1>
+    <h2>MANUEL RESET GEREKLİ</h2>
+    <p>Ekrana iki kez hızlıca dokunun</p>
+    <div class="hint">(Sistemi yeniden başlatmak için)</div>
 </div>
 
 <audio id="connectSound">
-<source src="https://www.soundjay.com/buttons/sounds/button-09.mp3">
+    <source src="https://www.soundjay.com/buttons/sounds/button-09.mp3">
 </audio>
 
 <audio id="alarm">
-<source src="https://www.soundjay.com/misc/sounds/alarm-clock-01.mp3">
+    <source src="https://www.soundjay.com/misc/sounds/alarm-clock-01.mp3">
 </audio>
 
 <script>
@@ -71,187 +75,179 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
 const timerEl = document.getElementById("timer");
-
 const connectSound = document.getElementById("connectSound");
 const alarm = document.getElementById("alarm");
 
-function resize(){
-    canvas.width = innerWidth;
-    canvas.height = innerHeight;
-}
-resize();
-window.onresize = resize;
-
-const colors = ["red","blue","green","yellow"];
-
-let left = [];
-let right = [];
-let connections = [null,null,null,null];
-
+let left = [], right = [], connections = [null, null, null, null];
 let selected = null;
+let isDragging = false;
+let currentPos = { x: 0, y: 0 };
+const colors = ["#ff4d4d", "#4d94ff", "#4dff4d", "#ffff4d"]; // Daha parlak renkler
 
-function generate(){
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    generate();
+}
+
+function generate() {
     left = [];
     right = [];
-
-    for(let i=0;i<4;i++){
-        left.push({x:canvas.width*0.2,y:(i+1)*canvas.height/5,color:colors[i]});
-        right.push({x:canvas.width*0.8,y:(i+1)*canvas.height/5,color:colors[i]});
+    const padding = canvas.height / 6;
+    for(let i=0; i<4; i++) {
+        left.push({ x: canvas.width * 0.15, y: padding + i * padding, color: colors[i] });
+        right.push({ x: canvas.width * 0.85, y: padding + i * padding, color: colors[i] });
     }
-
-    // randomize right side order
-    right.sort(()=>Math.random()-0.5);
+    right.sort(() => Math.random() - 0.5);
 }
 
-function drawLineAnimated(x1,y1,x2,y2,progress){
-    const x = x1 + (x2-x1)*progress;
-    const y = y1 + (y2-y1)*progress;
-
-    ctx.beginPath();
-    ctx.moveTo(x1,y1);
-    ctx.lineTo(x,y);
-    ctx.stroke();
+// Pozisyon Alma
+function getPointerPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
-function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+// Olaylar
+function startAction(e) {
+    const pos = getPointerPos(e);
+    left.forEach((p, i) => {
+        if (Math.hypot(pos.x - p.x, pos.y - p.y) < 35) { // Dokunma alanı geniş
+            selected = i;
+            isDragging = true;
+            currentPos = pos;
+        }
+    });
+}
 
-    // glitch effect
-    if(Math.random()<0.05){
-        ctx.fillStyle="rgba(255,255,255,0.03)";
-        ctx.fillRect(0,0,canvas.width,canvas.height);
+function moveAction(e) {
+    if (isDragging) {
+        currentPos = getPointerPos(e);
+    }
+}
+
+function endAction(e) {
+    if (!isDragging) return;
+    
+    right.forEach((p, i) => {
+        if (Math.hypot(currentPos.x - p.x, currentPos.y - p.y) < 45) {
+            connections[selected] = i;
+            connectSound.currentTime = 0;
+            connectSound.play().catch(() => {});
+            checkWin();
+        }
+    });
+
+    isDragging = false;
+    selected = null;
+}
+
+function checkWin() {
+    if (connections.every(c => c !== null)) {
+        const win = connections.every((rIdx, lIdx) => left[lIdx].color === right[rIdx].color);
+        if (win) {
+            setTimeout(() => {
+                alert("⚡ SİSTEM ÇALIŞIYOR!");
+                resetGame();
+            }, 300);
+        }
+    }
+}
+
+function draw() {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Glitch efekti
+    if (Math.random() < 0.03) {
+        ctx.fillStyle = "rgba(0, 255, 0, 0.05)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    // points
-    left.forEach(p=>{
-        ctx.fillStyle=p.color;
+    // Bağlantıları çiz
+    connections.forEach((rIdx, lIdx) => {
+        if (rIdx !== null) {
+            ctx.strokeStyle = left[lIdx].color;
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(left[lIdx].x, left[lIdx].y);
+            ctx.lineTo(right[rIdx].x, right[rIdx].y);
+            ctx.stroke();
+        }
+    });
+
+    // Sürüklenen çizgi
+    if (isDragging && selected !== null) {
+        ctx.strokeStyle = left[selected].color;
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.arc(p.x,p.y,10,0,Math.PI*2);
-        ctx.fill();
-    });
-
-    right.forEach(p=>{
-        ctx.fillStyle=p.color;
-        ctx.beginPath();
-        ctx.arc(p.x,p.y,10,0,Math.PI*2);
-        ctx.fill();
-    });
-
-    // connections
-    connections.forEach((rIndex,lIndex)=>{
-        if(rIndex!==null){
-            ctx.strokeStyle=left[lIndex].color;
-            ctx.lineWidth=3;
-            drawLineAnimated(
-                left[lIndex].x,
-                left[lIndex].y,
-                right[rIndex].x,
-                right[rIndex].y,
-                1
-            );
-        }
-    });
-}
-
-canvas.addEventListener("click",e=>{
-    const mx=e.clientX;
-    const my=e.clientY;
-
-    // sol seç
-    left.forEach((p,i)=>{
-        if(Math.hypot(mx-p.x,my-p.y)<15){
-            selected=i;
-        }
-    });
-
-    // sağa bağla
-    right.forEach((p,i)=>{
-        if(Math.hypot(mx-p.x,my-p.y)<15 && selected!==null){
-            connections[i]=selected;
-
-            connectSound.currentTime=0;
-            connectSound.play().catch(()=>{});
-
-            selected=null;
-        }
-    });
-
-    checkWin();
-});
-
-function checkWin(){
-    let correct=true;
-
-    connections.forEach((lIndex,rIndex)=>{
-        if(lIndex===null) correct=false;
-        else{
-            if(left[lIndex].color!==right[rIndex].color){
-                correct=false;
-            }
-        }
-    });
-
-    if(correct){
-        alert("Sistem Aktif ⚡");
-        resetGame();
+        ctx.moveTo(left[selected].x, left[selected].y);
+        ctx.lineTo(currentPos.x, currentPos.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
     }
+
+    // Noktalar
+    [...left, ...right].forEach(p => {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    });
+
+    requestAnimationFrame(draw);
 }
 
-function loop(){
-    draw();
-    requestAnimationFrame(loop);
-}
-loop();
-
-generate();
-
-
-// TIMER
+// Timer Yönetimi
 let time = 60;
 let timerInterval;
-
-function startTimer(){
+function startTimer() {
     time = 60;
-    timerEl.textContent = time;
-
-    timerInterval = setInterval(()=>{
+    timerInterval = setInterval(() => {
         time--;
         timerEl.textContent = time;
-
-        if(time<=0){
+        if(time <= 0) {
             clearInterval(timerInterval);
-            alarm.play().catch(()=>{});
+            alarm.play().catch(() => {});
         }
-    },1000);
+    }, 1000);
 }
 
-startTimer();
-
-function resetGame(){
-    connections=[null,null,null,null];
-    generate();
+function resetGame() {
+    connections = [null, null, null, null];
     clearInterval(timerInterval);
+    generate();
     startTimer();
 }
 
+// Event Listeners
+window.addEventListener("resize", resize);
+canvas.addEventListener("mousedown", startAction);
+window.addEventListener("mousemove", moveAction);
+window.addEventListener("mouseup", endAction);
 
-// POWER SYSTEM
-let powerTimeout = setTimeout(powerOff,120000);
+canvas.addEventListener("touchstart", (e) => { e.preventDefault(); startAction(e); }, { passive: false });
+canvas.addEventListener("touchmove", (e) => { e.preventDefault(); moveAction(e); }, { passive: false });
+canvas.addEventListener("touchend", endAction);
 
-function powerOff(){
-    overlay.style.display="flex";
-}
-
-overlay.addEventListener("dblclick",()=>{
-    overlay.style.display="none";
-    resetPowerTimer();
+// Power System (2 dakika)
+let powerTimeout = setTimeout(() => overlay.style.display="flex", 120000);
+overlay.addEventListener("dblclick", () => {
+    overlay.style.display = "none";
+    clearTimeout(powerTimeout);
+    powerTimeout = setTimeout(() => overlay.style.display="flex", 120000);
 });
 
-function resetPowerTimer(){
-    clearTimeout(powerTimeout);
-    powerTimeout = setTimeout(powerOff,120000);
-}
-</script>
+// Başlat
+resize();
+startTimer();
+draw();
 
+</script>
 </body>
 </html>
